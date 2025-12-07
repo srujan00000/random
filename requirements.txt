@@ -1,0 +1,13 @@
+# Content Generation Agent - Dependencies
+# Python 3.12
+
+# OpenAI SDK
+openai>=1.40.0
+
+# LangChain
+langchain>=0.3.0
+langchain-openai>=0.2.0
+langchain-core>=0.3.0
+
+# Environment variables
+python-dotenv>=1.0.0
