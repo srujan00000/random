@@ -1,6 +1,6 @@
 # Content Generation Agent 🎨
 
-AI-powered social media content generator using GPT-5, DALL-E 3, and Sora.
+AI-powered social media content generator using GPT-5, DALL-E 3, and Sora-2.
 
 ## Quick Start
 
@@ -29,34 +29,46 @@ python main.py
 │         (LangChain Agent with GPT-5)                        │
 └──────────────────────────┬──────────────────────────────────┘
                            │
-           ┌───────────────┼───────────────┐
-           ▼               ▼               ▼
-    ┌────────────┐  ┌────────────┐  ┌────────────┐
-    │   Image    │  │   Video    │  │  Caption   │
-    │ Generator  │  │ Generator  │  │ Generator  │
-    │ (DALL-E 3) │  │  (Sora)    │  │  (GPT-5)   │
-    └────────────┘  └────────────┘  └────────────┘
+     ┌─────────┬───────────┼───────────┬─────────┐
+     ▼         ▼           ▼           ▼         ▼
+┌─────────┐┌─────────┐┌─────────┐┌─────────┐┌─────────┐
+│  Image  ││  Video  ││ Caption ││ Policy  ││ Design  │
+│Generator││Generator││Generator││ Checker ││ Checker │
+│(DALL-E 3)│(Sora-2) ││ (GPT-5) ││ (GPT-5) ││ (GPT-5) │
+└─────────┘└─────────┘└─────────┘└─────────┘└─────────┘
 ```
 
 ## Tools
 
 | Tool | Description | Model |
 |------|-------------|-------|
-| `generate_image` | Creates images from text prompts | DALL-E 3 |
-| `generate_video` | Creates videos from text prompts | Sora |
-| `generate_caption` | Writes platform-optimized captions with hashtags | GPT-5 |
+| `generate_image` | Creates images, saves locally + URL | DALL-E 3 |
+| `generate_video` | Creates videos with aspect ratio mapping | Sora-2 |
+| `generate_caption` | Platform-optimized captions + hashtags | GPT-5 |
+| `check_policy_compliance` | Reviews content against policy guidelines | GPT-5 |
+| `check_design_compliance` | Reviews visuals against design guidelines | GPT-5 |
+
+## Aspect Ratio Options
+
+| Ratio | Resolution | Best For |
+|-------|------------|----------|
+| 16:9 | 1920x1080 | YouTube, LinkedIn, Twitter |
+| 9:16 | 1080x1920 | TikTok, Reels, Shorts |
+| 1:1 | 1080x1080 | Instagram Feed, Facebook |
+| 4:5 | 1080x1350 | Instagram Feed (optimal) |
+| 21:9 | 2560x1080 | Cinematic content |
 
 ## Configuration
 
 The CLI prompts for these settings on startup:
 
 - **Video Duration**: 5-60 seconds
-- **Video Resolution**: 720p / 1080p / 4k
-- **Aspect Ratio**: 16:9 / 9:16 / 1:1
+- **Aspect Ratio**: 16:9 / 9:16 / 1:1 / 4:5 / 21:9 (with resolution)
 - **Captions**: Enable/disable auto-caption generation
 - **Caption Style**: professional / casual / creative
 - **Image Size**: 1024x1024 / 1792x1024 / 1024x1792
 - **Image Quality**: standard / hd
+- **Auto Compliance**: Enable/disable automatic compliance checks
 
 ## CLI Commands
 
@@ -68,20 +80,31 @@ The CLI prompts for these settings on startup:
 | `/help` | Show help |
 | `/exit` | Exit application |
 
-## Example Usage
+## Compliance Checking
 
+The agent includes two compliance checkers:
+
+### Policy Compliance (`guidelines/policy_guidelines.md`)
+- Checks for prohibited content
+- Validates brand voice and tone
+- Ensures platform-specific compliance
+- Verifies legal disclosures
+
+### Design Compliance (`guidelines/design_guidelines.md`)
+- Validates color and branding
+- Checks composition and framing
+- Verifies technical quality
+- Ensures accessibility
+
+When `auto_compliance_check` is enabled, both checks run automatically after content generation.
+
+## Output
+
+Generated content is saved to:
 ```
-🧑 You: I have a tech conference next week. Create content for it.
-
-🤖 Agent: I'd be happy to help! Let me ask a few questions:
-   1. What's the conference name and theme?
-   2. Which platforms do you need content for?
-   3. What's the key message or announcement?
-
-🧑 You: It's called "AI Summit 2024", theme is future of AI, 
-       need LinkedIn and Instagram. Announce our new product launch.
-
-🤖 Agent: [Generates image + video + captions for both platforms]
+generated_content/
+├── images/     # DALL-E 3 generated images
+└── videos/     # Sora-2 generated videos
 ```
 
 ## File Structure
@@ -93,13 +116,23 @@ content-generation-agent/
 ├── config.py                    # Configuration management
 ├── tools/
 │   ├── __init__.py
-│   ├── image_generator.py       # DALL-E 3 tool
-│   ├── video_generator.py       # Sora tool
-│   └── caption_generator.py     # Caption + hashtag tool
-├── .env                         # API keys (not committed)
+│   ├── image_generator.py       # DALL-E 3 + local save
+│   ├── video_generator.py       # Sora-2 + aspect ratios
+│   ├── caption_generator.py     # Captions + hashtags
+│   ├── policy_checker.py        # Policy compliance agent
+│   └── design_checker.py        # Design compliance agent
+├── guidelines/
+│   ├── policy_guidelines.md     # Policy rules
+│   └── design_guidelines.md     # Design rules
+├── generated_content/           # Output folder (auto-created)
+├── .env                         # API keys
 ├── requirements.txt
 └── README.md
 ```
+
+## Zero Data Retention Note
+
+If you encounter a "zero data retention" error with Sora API, you need to contact OpenAI sales team to request ZDR approval for your organization. This is not a code workaround - it's a policy setting that must be enabled by OpenAI for your account.
 
 ## Integration Notes
 
@@ -108,3 +141,4 @@ This agent is designed to be integrated into a larger portal. Key integration po
 - `ContentGeneratorAgent` class can be imported and used directly
 - `config.py` allows programmatic configuration
 - Tools can be imported individually from `tools/` module
+- Compliance checkers can be run standalone
