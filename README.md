@@ -1,6 +1,6 @@
 # Content Generation Agent 🎨
 
-AI-powered social media content generator using GPT-5, DALL-E 3, and Sora-2.
+AI-powered social media content generator with publishing to LinkedIn, Instagram, and Facebook.
 
 ## Quick Start
 
@@ -8,137 +8,86 @@ AI-powered social media content generator using GPT-5, DALL-E 3, and Sora-2.
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Add your OpenAI API key to .env
-OPENAI_API_KEY=sk-your-key-here
+# 2. Add API keys to .env (copy from .env.example)
+OPENAI_API_KEY=sk-...
+META_ACCESS_TOKEN=...   # For Facebook/Instagram
+LINKEDIN_ACCESS_TOKEN=... # For LinkedIn
 
 # 3. Run
 python main.py
 ```
 
-## Architecture
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Image Generation** | DALL-E 3 with brand guidelines |
+| **Video Generation** | Sora-2 with platform optimization |
+| **Caption Generation** | Platform-specific with hashtags |
+| **Compliance Checks** | Policy + Design validation |
+| **Social Publishing** | LinkedIn, Instagram, Facebook |
+
+## Workflow
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         main.py                             │
-│                    (CLI Interface)                          │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│              content_generator_agent.py                     │
-│         (LangChain Agent with GPT-5)                        │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-     ┌─────────┬───────────┼───────────┬─────────┐
-     ▼         ▼           ▼           ▼         ▼
-┌─────────┐┌─────────┐┌─────────┐┌─────────┐┌─────────┐
-│  Image  ││  Video  ││ Caption ││ Policy  ││ Design  │
-│Generator││Generator││Generator││ Checker ││ Checker │
-│(DALL-E 3)│(Sora-2) ││ (GPT-5) ││ (GPT-5) ││ (GPT-5) │
-└─────────┘└─────────┘└─────────┘└─────────┘└─────────┘
+1. Select platforms → 2. Generate content → 3. Compliance check → 4. Publish
 ```
 
-## Tools
-
-| Tool | Description | Model |
-|------|-------------|-------|
-| `generate_image` | Creates images, saves locally + URL | DALL-E 3 |
-| `generate_video` | Creates videos with aspect ratio mapping | Sora-2 |
-| `generate_caption` | Platform-optimized captions + hashtags | GPT-5 |
-| `check_policy_compliance` | Reviews content against policy guidelines | GPT-5 |
-| `check_design_compliance` | Reviews visuals against design guidelines | GPT-5 |
-
-## Aspect Ratio Options
-
-| Ratio | Resolution | Best For |
-|-------|------------|----------|
-| 16:9 | 1920x1080 | YouTube, LinkedIn, Twitter |
-| 9:16 | 1080x1920 | TikTok, Reels, Shorts |
-| 1:1 | 1080x1080 | Instagram Feed, Facebook |
-| 4:5 | 1080x1350 | Instagram Feed (optimal) |
-| 21:9 | 2560x1080 | Cinematic content |
+The agent:
+1. Asks which platforms to publish to (LinkedIn, Instagram, Facebook)
+2. Generates image/video following brand guidelines
+3. Runs compliance checks automatically
+4. Publishes to selected platforms
 
 ## Configuration
 
-The CLI prompts for these settings on startup:
-
+On startup, you'll configure:
+- **Target Platforms**: linkedin, instagram, facebook (multiple OK)
 - **Video Duration**: 5-60 seconds
-- **Aspect Ratio**: 16:9 / 9:16 / 1:1 / 4:5 / 21:9 (with resolution)
-- **Captions**: Enable/disable auto-caption generation
-- **Caption Style**: professional / casual / creative
-- **Image Size**: 1024x1024 / 1792x1024 / 1024x1792
-- **Image Quality**: standard / hd
-- **Auto Compliance**: Enable/disable automatic compliance checks
+- **Aspect Ratio**: 16:9, 9:16, 1:1, 4:5
+- **Auto-Compliance**: Run checks after generation
+- **Auto-Publish**: Publish immediately or ask first
 
 ## CLI Commands
 
-| Command | Description |
-|---------|-------------|
+| Command | Action |
+|---------|--------|
 | `/config` | Reconfigure settings |
-| `/settings` | View current settings |
-| `/clear` | Clear conversation history |
-| `/help` | Show help |
-| `/exit` | Exit application |
-
-## Compliance Checking
-
-The agent includes two compliance checkers:
-
-### Policy Compliance (`guidelines/policy_guidelines.md`)
-- Checks for prohibited content
-- Validates brand voice and tone
-- Ensures platform-specific compliance
-- Verifies legal disclosures
-
-### Design Compliance (`guidelines/design_guidelines.md`)
-- Validates color and branding
-- Checks composition and framing
-- Verifies technical quality
-- Ensures accessibility
-
-When `auto_compliance_check` is enabled, both checks run automatically after content generation.
-
-## Output
-
-Generated content is saved to:
-```
-generated_content/
-├── images/     # DALL-E 3 generated images
-└── videos/     # Sora-2 generated videos
-```
+| `/settings` | View current config |
+| `/clear` | Clear chat history |
+| `/exit` | Exit |
 
 ## File Structure
 
 ```
-content-generation-agent/
-├── main.py                      # CLI entry point
-├── content_generator_agent.py   # LangChain agent setup
-├── config.py                    # Configuration management
+├── main.py                      # CLI entry
+├── content_generator_agent.py   # LangChain agent
+├── config.py                    # Configuration
 ├── tools/
-│   ├── __init__.py
-│   ├── image_generator.py       # DALL-E 3 + local save
-│   ├── video_generator.py       # Sora-2 + aspect ratios
+│   ├── image_generator.py       # DALL-E 3 + guidelines
+│   ├── video_generator.py       # Sora-2 + guidelines
 │   ├── caption_generator.py     # Captions + hashtags
-│   ├── policy_checker.py        # Policy compliance agent
-│   └── design_checker.py        # Design compliance agent
+│   ├── policy_checker.py        # Policy compliance
+│   ├── design_checker.py        # Design compliance
+│   ├── social_publisher.py      # Unified publisher
+│   ├── linkedin.py              # LinkedIn API
+│   ├── instagram.py             # Instagram API
+│   └── facebook.py              # Facebook API
 ├── guidelines/
-│   ├── policy_guidelines.md     # Policy rules
-│   └── design_guidelines.md     # Design rules
-├── generated_content/           # Output folder (auto-created)
+│   ├── policy_guidelines.md
+│   └── design_guidelines.md
+├── generated_content/           # Output folder
 ├── .env                         # API keys
-├── requirements.txt
-└── README.md
+└── .env.example                 # Template
 ```
 
-## Zero Data Retention Note
+## Environment Variables
 
-If you encounter a "zero data retention" error with Sora API, you need to contact OpenAI sales team to request ZDR approval for your organization. This is not a code workaround - it's a policy setting that must be enabled by OpenAI for your account.
-
-## Integration Notes
-
-This agent is designed to be integrated into a larger portal. Key integration points:
-
-- `ContentGeneratorAgent` class can be imported and used directly
-- `config.py` allows programmatic configuration
-- Tools can be imported individually from `tools/` module
-- Compliance checkers can be run standalone
+```
+OPENAI_API_KEY          # Required
+META_ACCESS_TOKEN       # For Facebook/Instagram
+FB_PAGE_ID              # Facebook Page ID
+IG_USER_ID              # Instagram User ID
+LINKEDIN_ACCESS_TOKEN   # LinkedIn OAuth token
+LINKEDIN_URN            # LinkedIn person URN
+```

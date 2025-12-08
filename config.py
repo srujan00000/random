@@ -1,80 +1,120 @@
 """
 Configuration module for the Content Generation Agent.
-Handles runtime configuration for video generation and caption settings.
+Handles runtime configuration for content generation, publishing, and compliance.
 """
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, List
 
 
-# Aspect ratio to resolution mapping with descriptions
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+# Aspect ratio to resolution mapping
 ASPECT_RATIO_OPTIONS = {
     "16:9": {"size": "1920x1080", "desc": "Landscape - YouTube, LinkedIn, Twitter"},
     "9:16": {"size": "1080x1920", "desc": "Portrait - TikTok, Reels, Shorts"},
     "1:1": {"size": "1080x1080", "desc": "Square - Instagram Feed, Facebook"},
-    "4:5": {"size": "1080x1350", "desc": "Portrait - Instagram Feed optimal"},
-    "21:9": {"size": "2560x1080", "desc": "Ultra-wide - Cinematic content"}
+    "4:5": {"size": "1080x1350", "desc": "Portrait - Instagram Feed optimal"}
 }
 
+# Available platforms for publishing
+AVAILABLE_PLATFORMS = ["linkedin", "instagram", "facebook"]
+
+
+# =============================================================================
+# CONFIGURATION DATACLASS
+# =============================================================================
 
 @dataclass
 class GenerationConfig:
-    """Configuration settings for content generation."""
+    """Configuration settings for content generation and publishing."""
+    
+    # Target platforms for publishing (can be multiple)
+    target_platforms: List[str] = field(default_factory=lambda: ["linkedin"])
     
     # Video settings
     video_duration: int = 10  # Duration in seconds (5-60)
-    video_aspect_ratio: str = "16:9"  # Options: 16:9, 9:16, 1:1, 4:5, 21:9
+    video_aspect_ratio: str = "16:9"  # Auto-selected based on platform if not specified
     
     # Caption settings
     enable_captions: bool = True
-    caption_style: str = "professional"  # Options: professional, casual, creative
+    caption_style: str = "professional"  # professional, casual, creative
     
     # Image settings
-    image_size: str = "1024x1024"  # Options: 1024x1024, 1792x1024, 1024x1792
-    image_quality: str = "hd"  # Options: standard, hd
+    image_size: str = "1024x1024"  # 1024x1024, 1792x1024, 1024x1792
+    image_quality: str = "hd"  # standard, hd
     
     # Compliance settings
-    auto_compliance_check: bool = True  # Run compliance checks after generation
+    auto_compliance_check: bool = True
+    
+    # Publishing settings
+    auto_publish: bool = False  # If True, publish immediately after generation
     
     @property
     def video_resolution(self) -> str:
         """Get video resolution based on aspect ratio."""
         return ASPECT_RATIO_OPTIONS.get(self.video_aspect_ratio, ASPECT_RATIO_OPTIONS["16:9"])["size"]
     
+    @property
+    def platforms_display(self) -> str:
+        """Get comma-separated list of platforms for display."""
+        return ", ".join([p.capitalize() for p in self.target_platforms])
+    
     def __str__(self) -> str:
         resolution = self.video_resolution
         return f"""
-┌───────────────────────────────────────────────────────────┐
-│              Current Configuration                         │
-├───────────────────────────────────────────────────────────┤
-│ 📹 VIDEO SETTINGS                                          │
-│    Duration: {self.video_duration}s                                         
-│    Aspect Ratio: {self.video_aspect_ratio} ({resolution})
-│                                                            │
-│ 📝 CAPTION SETTINGS                                        │
-│    Enabled: {self.enable_captions}                                       
-│    Style: {self.caption_style}                                    
-│                                                            │
-│ 🖼️  IMAGE SETTINGS                                         │
-│    Size: {self.image_size}                                    
-│    Quality: {self.image_quality}                                         
-│                                                            │
-│ ✅ COMPLIANCE                                              │
-│    Auto-check: {self.auto_compliance_check}                                     
-└───────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│              Current Configuration                          │
+├────────────────────────────────────────────────────────────┤
+│ 📱 TARGET PLATFORMS: {self.platforms_display:<35} │
+│                                                             │
+│ 📹 VIDEO: {self.video_duration}s, {self.video_aspect_ratio} ({resolution})
+│ 🖼️  IMAGE: {self.image_size}, {self.image_quality} quality
+│ 📝 CAPTIONS: {self.enable_captions}, style={self.caption_style}
+│ ✅ AUTO-COMPLIANCE: {self.auto_compliance_check}
+│ 🚀 AUTO-PUBLISH: {self.auto_publish}
+└────────────────────────────────────────────────────────────┘
 """
 
+
+# =============================================================================
+# INTERACTIVE CONFIGURATION
+# =============================================================================
 
 def get_config_from_user() -> GenerationConfig:
     """Interactive prompt to get configuration from user."""
     
     print("\n🔧 Configuration Setup")
-    print("=" * 50)
+    print("=" * 55)
     
     config = GenerationConfig()
     
-    # Video Duration
+    # =========================================================================
+    # PLATFORM SELECTION (Most important - asked first)
+    # =========================================================================
+    print("\n📱 Target Platforms:")
+    print("  Available: linkedin, instagram, facebook")
+    print("  (You can select multiple, comma-separated)")
+    
+    platforms_input = input("  Platforms [default: linkedin]: ").strip().lower()
+    if platforms_input:
+        # Parse comma-separated platforms
+        selected = [p.strip() for p in platforms_input.split(",")]
+        # Filter to only valid platforms
+        valid_selected = [p for p in selected if p in AVAILABLE_PLATFORMS]
+        if valid_selected:
+            config.target_platforms = valid_selected
+        else:
+            print("  ⚠️  No valid platforms. Using default (linkedin).")
+    
+    # =========================================================================
+    # VIDEO SETTINGS
+    # =========================================================================
     print("\n📹 Video Settings:")
+    
+    # Duration
     duration_input = input(f"  Duration in seconds (5-60) [default: {config.video_duration}]: ").strip()
     if duration_input:
         try:
@@ -86,8 +126,8 @@ def get_config_from_user() -> GenerationConfig:
         except ValueError:
             print("  ⚠️  Invalid input. Using default.")
     
-    # Aspect Ratio with resolution display
-    print("\n  Available aspect ratios:")
+    # Aspect Ratio
+    print("\n  Aspect ratios:")
     for ratio, info in ASPECT_RATIO_OPTIONS.items():
         print(f"    • {ratio} ({info['size']}) - {info['desc']}")
     
@@ -97,56 +137,56 @@ def get_config_from_user() -> GenerationConfig:
     elif aspect_input:
         print("  ⚠️  Invalid option. Using default.")
     
-    # Caption Toggle
-    print("\n📝 Caption Settings:")
-    caption_input = input(f"  Enable captions? (yes/no) [default: {'yes' if config.enable_captions else 'no'}]: ").strip().lower()
-    if caption_input in ["yes", "y", "true", "1"]:
-        config.enable_captions = True
-    elif caption_input in ["no", "n", "false", "0"]:
-        config.enable_captions = False
-    
-    # Caption Style (only if captions are enabled)
-    if config.enable_captions:
-        style_input = input(f"  Caption style (professional/casual/creative) [default: {config.caption_style}]: ").strip().lower()
-        if style_input in ["professional", "casual", "creative"]:
-            config.caption_style = style_input
-        elif style_input:
-            print("  ⚠️  Invalid option. Using default.")
-    
-    # Image Settings
+    # =========================================================================
+    # IMAGE SETTINGS
+    # =========================================================================
     print("\n🖼️  Image Settings:")
-    print("  Available sizes:")
-    print("    • 1024x1024 - Square")
-    print("    • 1792x1024 - Landscape")
-    print("    • 1024x1792 - Portrait")
+    print("  Sizes: 1024x1024 (square), 1792x1024 (landscape), 1024x1792 (portrait)")
     
-    size_input = input(f"\n  Image size [default: {config.image_size}]: ").strip()
+    size_input = input(f"  Image size [default: {config.image_size}]: ").strip()
     if size_input in ["1024x1024", "1792x1024", "1024x1792"]:
         config.image_size = size_input
     elif size_input:
         print("  ⚠️  Invalid option. Using default.")
     
-    quality_input = input(f"  Image quality (standard/hd) [default: {config.image_quality}]: ").strip().lower()
-    if quality_input in ["standard", "hd"]:
-        config.image_quality = quality_input
-    elif quality_input:
-        print("  ⚠️  Invalid option. Using default.")
+    # =========================================================================
+    # CAPTION SETTINGS
+    # =========================================================================
+    print("\n📝 Caption Settings:")
+    caption_input = input(f"  Enable captions? (yes/no) [default: yes]: ").strip().lower()
+    if caption_input in ["no", "n", "false", "0"]:
+        config.enable_captions = False
     
-    # Compliance Settings
-    print("\n✅ Compliance Settings:")
-    compliance_input = input(f"  Auto-run compliance checks after generation? (yes/no) [default: {'yes' if config.auto_compliance_check else 'no'}]: ").strip().lower()
-    if compliance_input in ["yes", "y", "true", "1"]:
-        config.auto_compliance_check = True
-    elif compliance_input in ["no", "n", "false", "0"]:
+    if config.enable_captions:
+        style_input = input(f"  Style (professional/casual/creative) [default: {config.caption_style}]: ").strip().lower()
+        if style_input in ["professional", "casual", "creative"]:
+            config.caption_style = style_input
+    
+    # =========================================================================
+    # COMPLIANCE & PUBLISHING
+    # =========================================================================
+    print("\n⚙️  Workflow Settings:")
+    
+    compliance_input = input("  Auto-run compliance checks? (yes/no) [default: yes]: ").strip().lower()
+    if compliance_input in ["no", "n", "false", "0"]:
         config.auto_compliance_check = False
     
+    publish_input = input("  Auto-publish after generation? (yes/no) [default: no]: ").strip().lower()
+    if publish_input in ["yes", "y", "true", "1"]:
+        config.auto_publish = True
+    
+    # Print final config
     print("\n✅ Configuration saved!")
     print(config)
     
     return config
 
 
-# Global config instance - will be set by main.py
+# =============================================================================
+# GLOBAL CONFIG STATE
+# =============================================================================
+
+# Global config instance - set by main.py
 current_config: Optional[GenerationConfig] = None
 
 

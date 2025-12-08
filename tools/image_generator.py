@@ -1,6 +1,6 @@
 """
 Image Generation Tool using DALL-E 3.
-Generates images based on text prompts and saves locally.
+Generates images following design and policy guidelines, saves locally.
 """
 
 import os
@@ -11,20 +11,81 @@ from langchain.tools import tool
 from openai import OpenAI
 
 
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
 def get_client():
-    """Get OpenAI client with lazy initialization."""
+    """Get OpenAI client - created on first call to avoid import errors."""
     return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 def get_output_dir() -> Path:
-    """Get or create the output directory for generated content."""
+    """Create and return the output directory for generated images."""
     output_dir = Path("generated_content/images")
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
 
 
+def load_guidelines() -> str:
+    """
+    Load both design and policy guidelines to inject into the prompt.
+    This ensures DALL-E generates content that follows our rules.
+    """
+    guidelines_dir = Path(__file__).parent.parent / "guidelines"
+    
+    combined = ""
+    
+    # Load design guidelines (for visual rules)
+    design_path = guidelines_dir / "design_guidelines.md"
+    if design_path.exists():
+        with open(design_path, 'r', encoding='utf-8') as f:
+            combined += "DESIGN RULES:\n" + f.read() + "\n\n"
+    
+    # Load policy guidelines (for content rules)
+    policy_path = guidelines_dir / "policy_guidelines.md"
+    if policy_path.exists():
+        with open(policy_path, 'r', encoding='utf-8') as f:
+            combined += "CONTENT POLICY:\n" + f.read()
+    
+    return combined
+
+
+def enhance_prompt_with_guidelines(original_prompt: str, platform: str = "") -> str:
+    """
+    Enhance the user's prompt by adding guideline requirements.
+    This makes DALL-E aware of our brand standards.
+    """
+    guidelines = load_guidelines()
+    
+    # Platform-specific style hints
+    platform_hints = {
+        "linkedin": "professional, corporate, clean aesthetic",
+        "instagram": "vibrant, eye-catching, social media optimized",
+        "facebook": "friendly, approachable, community-focused"
+    }
+    
+    style_hint = platform_hints.get(platform.lower(), "professional, high-quality")
+    
+    # Build the enhanced prompt
+    enhanced = f"""Create an image following these requirements:
+
+USER REQUEST: {original_prompt}
+
+STYLE: {style_hint}
+
+MANDATORY GUIDELINES TO FOLLOW:
+{guidelines}
+
+IMPORTANT: The image must be professional, high-quality (1080p+), with proper composition 
+(rule of thirds), good lighting, and no prohibited content. Ensure the visual style matches 
+the target platform aesthetic."""
+
+    return enhanced
+
+
 def download_image(url: str, filename: str) -> str:
-    """Download image from URL and save locally."""
+    """Download image from URL and save to local directory."""
     try:
         response = requests.get(url, timeout=60)
         response.raise_for_status()
@@ -40,25 +101,28 @@ def download_image(url: str, filename: str) -> str:
         return f"Download failed: {str(e)}"
 
 
+# =============================================================================
+# MAIN TOOL
+# =============================================================================
+
 @tool
-def generate_image(prompt: str, size: str = "1024x1024", quality: str = "hd") -> str:
+def generate_image(
+    prompt: str, 
+    platform: str = "",
+    size: str = "1024x1024", 
+    quality: str = "hd"
+) -> str:
     """
-    Generate an image using DALL-E 3 based on the given prompt.
+    Generate an image using DALL-E 3, following brand guidelines.
     
     Args:
-        prompt: A detailed description of the image to generate. Be specific about 
-                style, colors, composition, and mood for best results.
-        size: Image dimensions. Options: "1024x1024", "1792x1024" (landscape), 
-              "1024x1792" (portrait). Default is "1024x1024".
-        quality: Image quality. Options: "standard" or "hd". Default is "hd".
+        prompt: Description of the image to generate.
+        platform: Target platform (linkedin, instagram, facebook) - affects style.
+        size: Image dimensions - "1024x1024", "1792x1024" (landscape), "1024x1792" (portrait).
+        quality: Image quality - "standard" or "hd".
     
     Returns:
-        str: URL and local path of the generated image, or error message if generation fails.
-    
-    Example prompts for social media:
-        - "Professional LinkedIn banner showing a modern tech conference with diverse attendees"
-        - "Vibrant Instagram post for a summer sale with tropical colors and bold typography"
-        - "Minimalist product showcase on white background with soft shadows"
+        URL and local path of the generated image, plus generation details.
     """
     try:
         # Validate size parameter
@@ -71,11 +135,15 @@ def generate_image(prompt: str, size: str = "1024x1024", quality: str = "hd") ->
         if quality not in valid_qualities:
             quality = "hd"
         
-        # Get client and generate image using DALL-E 3
+        # Enhance the prompt with our guidelines
+        # This is the key part - we inject guidelines into DALL-E's prompt
+        enhanced_prompt = enhance_prompt_with_guidelines(prompt, platform)
+        
+        # Generate image using DALL-E 3
         client = get_client()
         response = client.images.generate(
             model="dall-e-3",
-            prompt=prompt,
+            prompt=enhanced_prompt,
             size=size,
             quality=quality,
             n=1
@@ -86,7 +154,8 @@ def generate_image(prompt: str, size: str = "1024x1024", quality: str = "hd") ->
         
         # Generate filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"image_{timestamp}.png"
+        platform_tag = f"_{platform}" if platform else ""
+        filename = f"image{platform_tag}_{timestamp}.png"
         
         # Download and save locally
         local_path = download_image(image_url, filename)
@@ -97,11 +166,13 @@ def generate_image(prompt: str, size: str = "1024x1024", quality: str = "hd") ->
 
 💾 Local Path: {local_path}
 
-📝 DALL-E's Interpretation: {revised_prompt}
+📱 Platform: {platform.upper() if platform else "General"}
 
 📐 Size: {size} | Quality: {quality}
 
-💡 Tip: The image has been saved locally and can be accessed at the path above."""
+📝 DALL-E Interpretation: {revised_prompt}
+
+✓ Generated following brand design and policy guidelines."""
 
     except Exception as e:
         return f"❌ Image generation failed: {str(e)}"
