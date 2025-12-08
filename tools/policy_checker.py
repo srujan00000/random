@@ -1,6 +1,6 @@
 """
 Policy Compliance Checker Agent.
-Reviews generated content against policy guidelines.
+Reviews generated content against the simplified policy guidelines.
 """
 
 import os
@@ -9,8 +9,12 @@ from langchain.tools import tool
 from openai import OpenAI
 
 
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
 def get_client():
-    """Get OpenAI client with lazy initialization."""
+    """Get OpenAI client - created on first call to avoid import errors."""
     return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
@@ -21,14 +25,29 @@ def load_policy_guidelines() -> str:
     if guidelines_path.exists():
         with open(guidelines_path, 'r', encoding='utf-8') as f:
             return f.read()
-    else:
-        return """Default Policy Guidelines:
-        - No prohibited content (violence, discrimination, explicit)
-        - Professional tone required
-        - No misleading claims
-        - Proper disclosures for sponsored content
-        - No copyright violations"""
+    
+    # Fallback if file doesn't exist
+    return """## Prohibited Content
+- Violence, weapons, harmful activities
+- Discrimination
+- Misleading claims
+- Copyrighted materials
+- Political content
+- Explicit content
 
+## Brand Voice
+- Professional tone
+- Inclusive language
+- No exaggerated claims
+
+## Legal
+- Label sponsored content
+- Use licensed content only"""
+
+
+# =============================================================================
+# MAIN TOOL
+# =============================================================================
 
 @tool
 def check_policy_compliance(
@@ -40,78 +59,56 @@ def check_policy_compliance(
     Check if generated content complies with policy guidelines.
     
     Args:
-        content_description: Description of the image/video content that was generated.
+        content_description: Description of the image/video content.
         caption: The caption/text that accompanies the content (if any).
-        platform: Target platform (instagram, linkedin, twitter, etc.)
+        platform: Target platform (linkedin, instagram, facebook).
     
     Returns:
-        str: Compliance report with pass/fail status and recommendations.
+        Compliance report with pass/fail status and recommendations.
     """
     try:
         policy_guidelines = load_policy_guidelines()
-        
         client = get_client()
         
-        system_prompt = f"""You are a content policy compliance reviewer. Your job is to review AI-generated social media content against company policy guidelines.
+        # System prompt tells GPT how to evaluate
+        system_prompt = f"""You are a content policy compliance reviewer.
+Evaluate the content against these guidelines:
 
-POLICY GUIDELINES:
 {policy_guidelines}
 
-Analyze the content and provide a structured compliance report. Be thorough but fair.
+EVALUATION CRITERIA:
+1. PROHIBITED CONTENT - Check for violence, discrimination, misleading claims, copyright issues
+2. BRAND VOICE - Professional, inclusive, no exaggerations
+3. PLATFORM FIT - Appropriate tone for {platform} (LinkedIn=professional, Instagram=casual OK, Facebook=conversational)
+4. LEGAL - Proper disclosures if needed
 
-Format your response EXACTLY as:
-═══════════════════════════════════════════
-      POLICY COMPLIANCE REPORT
-═══════════════════════════════════════════
+OUTPUT FORMAT (use exactly this format):
+═══════════════════════════════════════
+   POLICY COMPLIANCE REPORT
+═══════════════════════════════════════
 
-OVERALL STATUS: [✅ PASS / ⚠️ WARNING / ❌ FAIL]
-
+STATUS: [✅ PASS / ⚠️ WARNING / ❌ FAIL]
 SCORE: [X/10]
 
-───────────────────────────────────────────
-CATEGORY ASSESSMENT
-───────────────────────────────────────────
+CHECKS:
+• Prohibited Content: [✅/❌] [brief note]
+• Brand Voice: [✅/❌] [brief note]  
+• Platform Fit: [✅/❌] [brief note]
+• Legal Compliance: [✅/❌] [brief note]
 
-1. PROHIBITED CONTENT
-   Status: [✅/⚠️/❌]
-   Notes: [Brief assessment]
+ISSUES: [List any problems, or "None"]
 
-2. BRAND VOICE & TONE
-   Status: [✅/⚠️/❌]
-   Notes: [Brief assessment]
-
-3. PLATFORM COMPLIANCE
-   Status: [✅/⚠️/❌]
-   Notes: [Brief assessment]
-
-4. LEGAL & DISCLOSURE
-   Status: [✅/⚠️/❌]
-   Notes: [Brief assessment]
-
-───────────────────────────────────────────
-ISSUES FOUND
-───────────────────────────────────────────
-[List any issues, or "None" if compliant]
-
-───────────────────────────────────────────
-RECOMMENDATIONS
-───────────────────────────────────────────
-[List actionable recommendations]
-
-═══════════════════════════════════════════
+RECOMMENDATIONS: [List fixes if needed, or "Content is compliant"]
+═══════════════════════════════════════
 """
 
-        user_prompt = f"""Review this content for policy compliance:
+        user_prompt = f"""Review this content:
 
 PLATFORM: {platform}
+CONTENT: {content_description}
+CAPTION: {caption if caption else "None provided"}
 
-CONTENT DESCRIPTION:
-{content_description}
-
-CAPTION/TEXT:
-{caption if caption else "No caption provided"}
-
-Provide your compliance report."""
+Provide your compliance assessment."""
 
         response = client.chat.completions.create(
             model="gpt-5",
@@ -120,7 +117,7 @@ Provide your compliance report."""
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0.3,
-            max_tokens=1500
+            max_tokens=800
         )
         
         return response.choices[0].message.content

@@ -1,6 +1,6 @@
 """
 Design Compliance Checker Agent.
-Reviews generated visual content against design guidelines.
+Reviews generated visual content against the simplified design guidelines.
 """
 
 import os
@@ -9,8 +9,12 @@ from langchain.tools import tool
 from openai import OpenAI
 
 
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
 def get_client():
-    """Get OpenAI client with lazy initialization."""
+    """Get OpenAI client - created on first call to avoid import errors."""
     return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
@@ -21,111 +25,97 @@ def load_design_guidelines() -> str:
     if guidelines_path.exists():
         with open(guidelines_path, 'r', encoding='utf-8') as f:
             return f.read()
-    else:
-        return """Default Design Guidelines:
-        - Use brand-approved colors
-        - High resolution (min 1080p)
-        - Proper composition and framing
-        - Accessible design (good contrast)
-        - Professional quality"""
+    
+    # Fallback if file doesn't exist
+    return """## Colors
+- Professional, brand-appropriate colors
+- High contrast for text
+- No neon/oversaturated
 
+## Composition
+- Subject centered or rule-of-thirds
+- Clean backgrounds
+- Proper lighting
+
+## Quality
+- Minimum 1080p
+- Sharp focus
+- No watermarks
+
+## Accessibility
+- Good color contrast
+- No flashing effects"""
+
+
+# =============================================================================
+# MAIN TOOL
+# =============================================================================
 
 @tool
 def check_design_compliance(
     content_description: str,
     content_type: str = "image",
-    resolution: str = "",
-    additional_context: str = ""
+    resolution: str = ""
 ) -> str:
     """
     Check if generated visual content complies with design guidelines.
     
     Args:
-        content_description: Description of the image/video content, including 
-                            visual elements, colors, composition, etc.
-        content_type: Type of content ("image" or "video").
-        resolution: Resolution of the content if known (e.g., "1920x1080").
-        additional_context: Any additional context about the visual elements.
+        content_description: Description of the image/video visual elements.
+        content_type: Either "image" or "video".
+        resolution: Resolution if known (e.g., "1920x1080").
     
     Returns:
-        str: Design compliance report with pass/fail status and recommendations.
+        Design compliance report with pass/fail status and recommendations.
     """
     try:
         design_guidelines = load_design_guidelines()
-        
         client = get_client()
         
-        system_prompt = f"""You are a design compliance reviewer. Your job is to review AI-generated visual content (images/videos) against brand design guidelines.
+        # System prompt tells GPT how to evaluate
+        system_prompt = f"""You are a design compliance reviewer for visual content.
+Evaluate the content against these guidelines:
 
-DESIGN GUIDELINES:
 {design_guidelines}
 
-Analyze the content description and provide a structured design compliance report. Since you cannot see the actual image/video, base your assessment on the description provided and flag any potential concerns.
+EVALUATION CRITERIA:
+1. COLORS - Professional colors, high contrast, no neon
+2. COMPOSITION - Good framing, clean background, proper lighting
+3. QUALITY - High resolution, sharp focus, no artifacts
+4. ACCESSIBILITY - Good contrast, no strobing
 
-Format your response EXACTLY as:
-═══════════════════════════════════════════
-      DESIGN COMPLIANCE REPORT
-═══════════════════════════════════════════
+NOTE: You cannot see the actual {content_type}, so evaluate based on the description.
+Flag items that need manual visual review.
 
-OVERALL STATUS: [✅ PASS / ⚠️ WARNING / ❌ FAIL]
+OUTPUT FORMAT (use exactly this format):
+═══════════════════════════════════════
+   DESIGN COMPLIANCE REPORT
+═══════════════════════════════════════
 
+STATUS: [✅ PASS / ⚠️ WARNING / ❌ FAIL]
 SCORE: [X/10]
+TYPE: [{content_type.upper()}]
 
-CONTENT TYPE: [{content_type.upper()}]
+CHECKS:
+• Colors: [✅/⚠️/❌] [brief note]
+• Composition: [✅/⚠️/❌] [brief note]
+• Quality: [✅/⚠️/❌] [brief note]
+• Accessibility: [✅/⚠️/❌] [brief note]
 
-───────────────────────────────────────────
-CATEGORY ASSESSMENT
-───────────────────────────────────────────
+ISSUES: [List any problems, or "None identified"]
 
-1. COLOR & BRANDING
-   Status: [✅/⚠️/❌]
-   Notes: [Assessment based on description]
+NEEDS MANUAL REVIEW: [List items requiring visual check]
 
-2. COMPOSITION & FRAMING
-   Status: [✅/⚠️/❌]
-   Notes: [Assessment based on description]
-
-3. TECHNICAL QUALITY
-   Status: [✅/⚠️/❌]
-   Notes: [Assessment based on resolution and description]
-
-4. ACCESSIBILITY
-   Status: [✅/⚠️/❌]
-   Notes: [Assessment of accessibility considerations]
-
-5. PLATFORM OPTIMIZATION
-   Status: [✅/⚠️/❌]
-   Notes: [Assessment of format/size for intended use]
-
-───────────────────────────────────────────
-POTENTIAL ISSUES
-───────────────────────────────────────────
-[List any potential design issues, or "None identified" if appears compliant]
-
-───────────────────────────────────────────
-RECOMMENDATIONS
-───────────────────────────────────────────
-[List actionable design recommendations]
-
-───────────────────────────────────────────
-MANUAL REVIEW NEEDED
-───────────────────────────────────────────
-[List aspects that require human visual review]
-
-═══════════════════════════════════════════
+RECOMMENDATIONS: [List suggestions if needed]
+═══════════════════════════════════════
 """
 
-        user_prompt = f"""Review this visual content for design compliance:
+        user_prompt = f"""Review this {content_type}:
 
-CONTENT TYPE: {content_type}
+DESCRIPTION: {content_description}
 RESOLUTION: {resolution if resolution else "Not specified"}
 
-CONTENT DESCRIPTION:
-{content_description}
-
-{f"ADDITIONAL CONTEXT: {additional_context}" if additional_context else ""}
-
-Provide your design compliance report. Note: Since you cannot see the actual {content_type}, focus on the description and flag items that need manual visual review."""
+Provide your design compliance assessment."""
 
         response = client.chat.completions.create(
             model="gpt-5",
@@ -134,7 +124,7 @@ Provide your design compliance report. Note: Since you cannot see the actual {co
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0.3,
-            max_tokens=1500
+            max_tokens=800
         )
         
         return response.choices[0].message.content
