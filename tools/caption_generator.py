@@ -1,6 +1,6 @@
 """
-Caption Generation Tool using GPT-5.
-Generates captions with hashtags for social media platforms.
+Caption Generation Tool and Helper Functions.
+Provides both a LangChain tool and a simple function for caption generation.
 """
 
 import os
@@ -8,10 +8,82 @@ from langchain.tools import tool
 from openai import OpenAI
 
 
-def get_client():
-    """Get OpenAI client with lazy initialization."""
-    return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# =============================================================================
+# HELPER FUNCTION (Used by linkedin.py, instagram.py, facebook.py)
+# =============================================================================
 
+def create_caption(content_description: str, platform: str = "linkedin") -> str:
+    """
+    Generate a plain caption for social media posting.
+    This is a simple function (not a tool) for use by posting modules.
+    
+    Args:
+        content_description: What the content is about.
+        platform: Target platform (linkedin, instagram, facebook).
+    
+    Returns:
+        Plain text caption ready for posting.
+    """
+    try:
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        # Platform-specific prompts
+        platform_prompts = {
+            "linkedin": "Write a professional LinkedIn post. Keep it concise (2-3 sentences). Include 3-5 relevant hashtags at the end.",
+            "instagram": "Write an engaging Instagram caption. Keep it short (2-3 lines). Include 5-10 relevant hashtags at the end. Emojis are encouraged.",
+            "facebook": "Write a friendly, conversational Facebook post. Keep it brief (2-3 sentences). Include 2-3 hashtags at the end."
+        }
+        
+        system_prompt = platform_prompts.get(platform.lower(), platform_prompts["linkedin"])
+        
+        response = client.chat.completions.create(
+            model="gpt-4o",  # Using gpt-4o for faster response
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Create a caption for: {content_description}"}
+            ],
+            max_tokens=300,
+            temperature=0.7
+        )
+        
+        return response.choices[0].message.content.strip()
+    
+    except Exception as e:
+        # Return a simple fallback caption if generation fails
+        return f"{content_description} #socialmedia #content"
+
+
+# =============================================================================
+# PLATFORM-SPECIFIC GUIDELINES
+# =============================================================================
+
+PLATFORM_GUIDELINES = {
+    "instagram": {
+        "max_length": 2200,
+        "hashtag_count": "20-30",
+        "notes": "Visual-first, storytelling works well, hashtags in comments or at end"
+    },
+    "linkedin": {
+        "max_length": 3000,
+        "hashtag_count": "3-5",
+        "notes": "Professional tone, thought leadership, industry-specific hashtags"
+    },
+    "twitter": {
+        "max_length": 280,
+        "hashtag_count": "1-3",
+        "notes": "Concise, punchy, trending hashtags work best"
+    },
+    "facebook": {
+        "max_length": 63206,
+        "hashtag_count": "1-3",
+        "notes": "Conversational, questions engage well, minimal hashtags"
+    }
+}
+
+
+# =============================================================================
+# LANGCHAIN TOOL (Used by the agent)
+# =============================================================================
 
 @tool
 def generate_caption(
@@ -22,104 +94,54 @@ def generate_caption(
     include_emojis: bool = True
 ) -> str:
     """
-    Generate a social media caption with relevant hashtags for the specified platform.
+    Generate a social media caption with relevant hashtags.
     
     Args:
-        content_description: Description of the content (image/video) that needs a caption.
-                            Include context about the event, product, or message.
-        platform: Target social media platform. Options: "instagram", "linkedin", 
-                  "twitter", "tiktok", "facebook". Default is "instagram".
-        style: Caption tone/style. Options: "professional", "casual", "creative", 
-               "humorous", "inspirational". Default is "professional".
-        include_hashtags: Whether to include relevant hashtags. Default is True.
-        include_emojis: Whether to include emojis in the caption. Default is True.
+        content_description: Description of the content (image/video).
+        platform: Target platform (instagram, linkedin, facebook, twitter).
+        style: Caption style (professional, casual, creative).
+        include_hashtags: Whether to include hashtags.
+        include_emojis: Whether to include emojis.
     
     Returns:
-        str: Generated caption with hashtags, or error message if generation fails.
+        Generated caption with formatting details.
     """
     try:
-        # Platform-specific guidelines
-        platform_guidelines = {
-            "instagram": {
-                "max_length": 2200,
-                "hashtag_count": "20-30",
-                "notes": "Visual-first, storytelling works well, hashtags in comments or at end"
-            },
-            "linkedin": {
-                "max_length": 3000,
-                "hashtag_count": "3-5",
-                "notes": "Professional tone, thought leadership, industry-specific hashtags"
-            },
-            "twitter": {
-                "max_length": 280,
-                "hashtag_count": "1-3",
-                "notes": "Concise, punchy, trending hashtags work best"
-            },
-            "tiktok": {
-                "max_length": 2200,
-                "hashtag_count": "4-6",
-                "notes": "Trendy, casual, include trending sounds/challenges references"
-            },
-            "facebook": {
-                "max_length": 63206,
-                "hashtag_count": "1-3",
-                "notes": "Conversational, questions engage well, minimal hashtags"
-            }
-        }
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
         # Get platform info
         platform = platform.lower()
-        if platform not in platform_guidelines:
-            platform = "instagram"
+        platform_info = PLATFORM_GUIDELINES.get(platform, PLATFORM_GUIDELINES["instagram"])
         
-        platform_info = platform_guidelines[platform]
-        
-        # Build the prompt for GPT-5
-        system_prompt = f"""You are an expert social media content creator specializing in {platform}.
-        
-Your task is to create engaging captions that:
-1. Match the {style} tone/style
-2. Are optimized for {platform} (max {platform_info['max_length']} characters)
-3. Include {platform_info['hashtag_count']} relevant, trending hashtags {"" if include_hashtags else "(SKIP hashtags as requested)"}
-4. {"Include appropriate emojis" if include_emojis else "Do NOT include emojis"}
+        # Build the prompt
+        system_prompt = f"""You are an expert social media content creator for {platform}.
+
+Create a caption that:
+1. Uses a {style} tone
+2. Stays under {platform_info['max_length']} characters
+3. {"Includes " + platform_info['hashtag_count'] + " hashtags" if include_hashtags else "No hashtags"}
+4. {"Uses appropriate emojis" if include_emojis else "No emojis"}
 5. {platform_info['notes']}
 
-Format your response as:
-CAPTION:
-[The main caption text]
+Output ONLY the caption text, nothing else."""
 
-{"HASHTAGS:" if include_hashtags else ""}
-{"[Space-separated hashtags]" if include_hashtags else ""}
-"""
-
-        user_prompt = f"""Create a {style} caption for {platform} about:
-
-{content_description}
-
-Make it engaging and optimized for maximum reach and engagement."""
-
-        # Get client and generate caption using GPT-5
-        client = get_client()
         response = client.chat.completions.create(
-            model="gpt-5",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": f"Create a caption for: {content_description}"}
             ],
-            temperature=0.8,
-            max_tokens=1000
+            max_tokens=500,
+            temperature=0.8
         )
         
-        generated_caption = response.choices[0].message.content
+        caption = response.choices[0].message.content.strip()
         
         return f"""✅ Caption Generated for {platform.upper()}!
 
-{generated_caption}
+{caption}
 
-📊 Platform Guidelines Applied:
-   • Max Length: {platform_info['max_length']} chars
-   • Recommended Hashtags: {platform_info['hashtag_count']}
-   • Style: {style.capitalize()}"""
+📊 Settings: {style} style, hashtags={'yes' if include_hashtags else 'no'}, emojis={'yes' if include_emojis else 'no'}"""
 
     except Exception as e:
         return f"❌ Caption generation failed: {str(e)}"

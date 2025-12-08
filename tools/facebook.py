@@ -1,154 +1,194 @@
+"""
+Facebook API Integration.
+Handles image and video posting to Facebook Pages using the Graph API.
+Uses the unified caption generator from caption_generator.py.
+"""
+
 import os
 import mimetypes
 import requests
 from dotenv import load_dotenv
-from openai import OpenAI
+
+# Import the unified caption generator
+from tools.caption_generator import create_caption
 
 load_dotenv()
 
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
 META_ACCESS_TOKEN = os.getenv("META_ACCESS_TOKEN")
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GRAPH_API_BASE = "https://graph.facebook.com/v24.0"
 
-client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
 
-def generate_caption(prompt: str) -> str:
-    """
-    Uses OpenAI to generate a short caption with hashtags.
-    """
-    if client is None:
-        raise RuntimeError("OPENAI_API_KEY not set – cannot generate caption.")
-
-    resp = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You write short, engaging Instagram and Facebook captions."},
-            {
-                "role": "user",
-                "content": f"Write a short caption (max 2 lines) with 5 relevant hashtags for: {prompt}"
-            }
-        ],
-        max_completion_tokens=120,
-        temperature=0.7,
-    )
-    return resp.choices[0].message.content.strip()
+def _check_credentials():
+    """Verify Facebook credentials are set."""
+    if not META_ACCESS_TOKEN:
+        raise RuntimeError("META_ACCESS_TOKEN is not set in .env")
+    if not FB_PAGE_ID:
+        raise RuntimeError("FB_PAGE_ID is not set in .env")
 
 
 def get_page_access_token() -> str:
     """
-    Returns a Page access token for FB_PAGE_ID if META_ACCESS_TOKEN is a user token with permissions.
-    Falls back to META_ACCESS_TOKEN if exchange fails.
+    Get the Facebook Page access token.
+    Falls back to META_ACCESS_TOKEN if page token retrieval fails.
     """
     if not META_ACCESS_TOKEN:
         raise RuntimeError("META_ACCESS_TOKEN is not set.")
     if not FB_PAGE_ID:
         raise RuntimeError("FB_PAGE_ID is not set.")
-
+    
     url = f"{GRAPH_API_BASE}/{FB_PAGE_ID}"
     params = {"fields": "access_token", "access_token": META_ACCESS_TOKEN}
+    
     try:
-        r = requests.get(url, params=params, timeout=30)
-        j = r.json()
-        if r.ok and isinstance(j, dict) and j.get("access_token"):
-            return j["access_token"]
+        response = requests.get(url, params=params, timeout=30)
+        data = response.json()
+        
+        if response.ok and isinstance(data, dict) and data.get("access_token"):
+            return data["access_token"]
         else:
-            print("[FB] Could not retrieve Page access token; using provided META_ACCESS_TOKEN. Response:", j if isinstance(j, dict) else r.text[:200])
+            print(f"[FB] Could not retrieve Page access token; using META_ACCESS_TOKEN. Response: {data}")
             return META_ACCESS_TOKEN
     except Exception as e:
-        print("[FB] Page token fetch failed:", repr(e))
+        print(f"[FB] Page token fetch failed: {e}")
         return META_ACCESS_TOKEN
 
 
-def post_facebook_image(prompt: str, image_path: str, published: bool = True) -> dict:
+# =============================================================================
+# IMAGE POSTING
+# =============================================================================
+
+def post_facebook_image(caption_prompt: str, image_path: str, published: bool = True) -> dict:
     """
-    Generate a caption and post a local image file to the Facebook Page as a photo.
-    - image_path: local path to an image (jpg, png, gif, etc.)
-    - published: whether to publish immediately
+    Generate caption and post an image to Facebook Page.
+    
+    Args:
+        caption_prompt: Description of the content for caption generation.
+        image_path: Local path to the image file.
+        published: Whether to publish immediately (True) or save as draft (False).
+    
+    Returns:
+        dict: Facebook API response with post details.
     """
+    _check_credentials()
+    
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"Image file not found: {image_path}")
-
-    caption = generate_caption(prompt)
+    
+    # Generate caption using unified generator
+    print("[FB] Generating caption...")
+    caption = create_caption(caption_prompt, platform="facebook")
+    print(f"[FB] Caption: {caption[:100]}...")
+    
+    # Get page token and prepare upload
     page_token = get_page_access_token()
     url = f"{GRAPH_API_BASE}/{FB_PAGE_ID}/photos"
-
+    
     # Guess MIME type
-    mime, _ = mimetypes.guess_type(image_path)
-    if not mime:
-        # reasonable default
-        mime = "image/jpeg"
-
+    mime_type, _ = mimetypes.guess_type(image_path)
+    if not mime_type:
+        mime_type = "image/jpeg"
+    
     params = {
         "access_token": page_token,
         "caption": caption,
         "published": "true" if published else "false",
     }
-
-    print(f"[FB] Posting image to: {url}")
-    with open(image_path, "rb") as f:
-        files = {"source": (os.path.basename(image_path), f, mime)}
-        r = requests.post(url, data=params, files=files, timeout=120)
-
+    
+    print(f"[FB] Posting image to Facebook...")
+    
+    with open(image_path, "rb") as img_file:
+        files = {"source": (os.path.basename(image_path), img_file, mime_type)}
+        response = requests.post(url, data=params, files=files, timeout=120)
+    
     try:
-        data = r.json()
+        data = response.json()
     except Exception:
-        data = {"raw": r.text}
-
-    if r.status_code >= 400:
-        print("[FB] Image Error:", data)
-        r.raise_for_status()
-
-    print("[FB] Image Response:", data)
+        data = {"raw": response.text[:500]}
+    
+    if response.status_code >= 400:
+        print(f"[FB] Image error: {data}")
+        raise RuntimeError(f"[FB] Image post failed: {data}")
+    
+    print(f"[FB] ✅ Image posted successfully! Response: {data}")
     return data
 
 
-def post_facebook_video(prompt: str, video_path: str, title: str | None = None, published: bool = True) -> dict:
+# =============================================================================
+# VIDEO POSTING
+# =============================================================================
+
+def post_facebook_video(caption_prompt: str, video_path: str, title: str = None, published: bool = True) -> dict:
     """
-    Generate a caption and post a local video file to the Facebook Page.
-    - video_path: local path to the video file (e.g., .mp4)
-    - title: optional video title
-    - published: whether to publish immediately
+    Generate caption and post a video to Facebook Page.
+    
+    Args:
+        caption_prompt: Description of the content for caption generation.
+        video_path: Local path to the video file.
+        title: Optional title for the video.
+        published: Whether to publish immediately (True) or save as draft (False).
+    
+    Returns:
+        dict: Facebook API response with post details.
     """
+    _check_credentials()
+    
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video file not found: {video_path}")
-
-    description = generate_caption(prompt)
-    url = f"{GRAPH_API_BASE}/{FB_PAGE_ID}/videos"
+    
+    # Generate caption using unified generator
+    print("[FB] Generating caption...")
+    description = create_caption(caption_prompt, platform="facebook")
+    print(f"[FB] Caption: {description[:100]}...")
+    
+    # Get page token and prepare upload
     page_token = get_page_access_token()
+    url = f"{GRAPH_API_BASE}/{FB_PAGE_ID}/videos"
+    
     params = {
         "access_token": page_token,
         "description": description,
         "published": "true" if published else "false",
     }
+    
     if title:
         params["title"] = title
-
-    files = {
-        "source": (os.path.basename(video_path), open(video_path, "rb"), "video/mp4")
-    }
-
-    print(f"[FB] Posting video to: {url}")
-    r = requests.post(url, data=params, files=files)
-
+    
+    print(f"[FB] Posting video to Facebook (this may take a while)...")
+    
+    with open(video_path, "rb") as video_file:
+        files = {"source": (os.path.basename(video_path), video_file, "video/mp4")}
+        response = requests.post(url, data=params, files=files, timeout=300)
+    
     try:
-        data = r.json()
+        data = response.json()
     except Exception:
-        data = {"raw": r.text}
-
-    if r.status_code >= 400:
-        print("[FB] Video Error:", data)
-        r.raise_for_status()
-
-    print("[FB] Video Response:", data)
+        data = {"raw": response.text[:500]}
+    
+    if response.status_code >= 400:
+        print(f"[FB] Video error: {data}")
+        raise RuntimeError(f"[FB] Video post failed: {data}")
+    
+    print(f"[FB] ✅ Video posted successfully! Response: {data}")
     return data
 
 
-if __name__ == "__main__":
-    # Example: Post an image to Facebook (NOT Instagram)
-    # Ensure OIP.jpg exists in the current directory and .env has META_ACCESS_TOKEN and FB_PAGE_ID set.
-    post_facebook_image("Announcing our new AI automation tool.", "OIP.jpg")
+# =============================================================================
+# STANDALONE TEST
+# =============================================================================
 
-    # Example: Post a video to Facebook (uncomment if needed)
-    # post_facebook_video("Announcing our new AI automation tool.", "Cute_cat.mp4", title="Cute cat")
+if __name__ == "__main__":
+    # Test image posting
+    # post_facebook_image("Announcing our new AI automation tool.", "test_image.jpg")
+    
+    # Test video posting
+    # post_facebook_video("Demo of our product.", "test_video.mp4", title="Product Demo")
+    pass
